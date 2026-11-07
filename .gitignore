@@ -1,0 +1,22 @@
+# Secrets & Environment variables
+.env
+.env.local
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+
+# Node & Next.js build files
+node_modules/
+.next/
+out/
+
+# Docker & Database local data
+postgres_data/
+
+# Mac system files
+.DS_Store
+
