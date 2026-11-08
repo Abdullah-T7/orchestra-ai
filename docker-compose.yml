@@ -1,4 +1,18 @@
 services:
+  frontend:
+    build: ./frontend
+    container_name: orchestra_frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws/missions
+    depends_on:
+      - backend
+
   backend:
     build: ./backend
     container_name: command_center_backend
@@ -10,9 +24,19 @@ services:
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=postgresql://user:password@postgres:5432/command_center
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
       - redis
       - postgres
+      - ollama
+
+  ollama:
+    image: ollama/ollama
+    container_name: orchestra_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
 
   redis:
     image: redis:7-alpine
@@ -34,4 +58,4 @@ services:
 
 volumes:
   postgres_data:
-
+  ollama_data:

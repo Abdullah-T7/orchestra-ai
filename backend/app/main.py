@@ -18,7 +18,6 @@ app.add_middleware(
 class MissionRequest(BaseModel):
     objective: str
 
-
 @app.get("/")
 def health_check():
     return {
@@ -50,22 +49,6 @@ def run_test_mission():
         "deliverable": final_state["final_report"]
     }
 
-@app.post("/api/missions/run")
-def run_mission(request: MissionRequest):
-    initial_state = {
-        "mission_id": str(uuid.uuid4()),
-        "objective": request.objective,
-        "current_agent": "supervisor",
-        "next_step": "supervisor",
-        "iteration_count": 0,
-        "research_data": [],
-        "analysis": None,
-        "final_report": None,
-        "logs": [],
-        "status": "running"
-    }
-    return mission_graph.invoke(initial_state)
-
 @app.websocket("/ws/missions")
 async def websocket_mission_stream(websocket: WebSocket):
     await websocket.accept()
@@ -86,6 +69,23 @@ async def websocket_mission_stream(websocket: WebSocket):
             "status": "running"
         }
 
+        # Send initial confirmation event
+        await websocket.send_json({
+            "type": "NODE_UPDATE",
+            "active_agent": "supervisor",
+            "latest_log": {
+                "agent": "Supervisor Core",
+                "message": f"Initialized mission objective: '{objective}'. Evaluating task plan.",
+                "timestamp": "08:00:00"
+            },
+            "status": "running",
+            "research_count": 0,
+            "has_analysis": False,
+            "final_report": None
+        })
+        await asyncio.sleep(2.0)
+
+        # Stream LangGraph execution with deliberate 2.2-second pauses
         for step_output in mission_graph.stream(state):
             node_name = list(step_output.keys())[0]
             updated_state = step_output[node_name]
@@ -101,7 +101,9 @@ async def websocket_mission_stream(websocket: WebSocket):
                 "has_analysis": bool(updated_state.get("analysis")),
                 "final_report": updated_state.get("final_report")
             })
-            await asyncio.sleep(0.5)
+
+            # Pacing pause so network transitions and timeline bars can be clearly observed
+            await asyncio.sleep(2.2)
 
         await websocket.send_json({
             "type": "MISSION_COMPLETE",

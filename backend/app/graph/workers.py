@@ -3,17 +3,25 @@ from datetime import datetime
 from app.graph.state import MissionState
 from app.graph.tools import search_web
 
+
 def _get_timestamp() -> str:
     return datetime.now().strftime("%H:%M:%S")
 
+
+def _get_llm():
+    from langchain_ollama import ChatOllama
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    return ChatOllama(model="llama3.2", base_url=base_url, timeout=120)
+
+
 def researcher_node(state: MissionState) -> dict:
     objective = state["objective"]
-    query = f"{objective} market competitors pain points"
-    results = search_web(query, max_results=4)
+    query = f"{objective} market competitors pricing customer complaints"
+    results = search_web(query, max_results=6)
 
     log_entry = {
         "agent": "Researcher Agent",
-        "message": f"Searched web for '{query}' and retrieved {len(results)} sources.",
+        "message": f"Searched web for '{query}' — retrieved {len(results)} live sources.",
         "timestamp": _get_timestamp()
     }
 
@@ -23,33 +31,41 @@ def researcher_node(state: MissionState) -> dict:
         "logs": state.get("logs", []) + [log_entry]
     }
 
+
 def analyst_node(state: MissionState) -> dict:
     research = state.get("research_data", [])
     objective = state["objective"]
-    api_key = os.getenv("GEMINI_API_KEY")
 
-    if api_key:
-        try:
-            from langchain_google_genai import ChatGoogleGenerativeAI
-            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key)
-            prompt = f"Analyze these search results for objective '{objective}':\n\n{research}"
-            response = llm.invoke(prompt)
-            analysis_text = str(response.content)
-        except Exception as e:
-            analysis_text = f"LLM analysis failed: {str(e)}"
-    else:
-        snippets = "\n- ".join([f"{r.get('title', 'Source')}: {r.get('snippet', '')}" for r in research])
-        analysis_text = (
-            f"### Market Analysis & Competitor Landscape\n\n"
-            f"**Key Findings from Live Sources:**\n- {snippets}\n\n"
-            f"**Identified Gaps & Opportunities:**\n"
-            f"- High subscription pricing and complex onboarding in current products.\n"
-            f"- Need for simplified, lightweight tools targeting small operators."
-        )
+    snippets_text = "\n\n".join([
+        f"Source: {r.get('title', 'Unknown')}\nURL: {r.get('url', '')}\nSummary: {r.get('snippet', '')}"
+        for r in research
+    ])
+
+    prompt = f"""You are a senior market analyst. A research team collected the following live web sources for this objective:
+
+OBJECTIVE: {objective}
+
+RESEARCH SOURCES:
+{snippets_text}
+
+Based on these sources, write a detailed market analysis that includes:
+1. Competitor overview (names, pricing tiers if visible, key features)
+2. Common customer complaints and unmet needs
+3. SWOT Analysis (Strengths, Weaknesses, Opportunities, Threats)
+4. Key market gaps and strategic opportunities
+
+Format your response as clean markdown with proper headers."""
+
+    try:
+        llm = _get_llm()
+        response = llm.invoke(prompt)
+        analysis_text = str(response.content)
+    except Exception as e:
+        analysis_text = f"Ollama analysis failed: {str(e)}\n\nRaw sources collected:\n{snippets_text}"
 
     log_entry = {
         "agent": "Analyst Agent",
-        "message": "Synthesized competitor landscape and market opportunities.",
+        "message": "Completed SWOT analysis and competitor landscape via Ollama.",
         "timestamp": _get_timestamp()
     }
 
@@ -59,33 +75,53 @@ def analyst_node(state: MissionState) -> dict:
         "logs": state.get("logs", []) + [log_entry]
     }
 
+
 def writer_node(state: MissionState) -> dict:
     objective = state["objective"]
     analysis = state.get("analysis", "No analysis provided.")
     sources = state.get("research_data", [])
 
-    sources_text = "\n".join([f"- [{s.get('title', 'Source')}]({s.get('url', '#')})" for s in sources if s.get("url")])
+    sources_text = "\n".join([
+        f"- [{s.get('title', 'Source')}]({s.get('url', '#')})"
+        for s in sources if s.get("url")
+    ])
+
+    prompt = f"""You are a senior startup strategist and technical writer. Using the market analysis below, write a complete go-to-market launch document for this objective:
+
+OBJECTIVE: {objective}
+
+MARKET ANALYSIS:
+{analysis}
+
+Write a professional strategic document that includes:
+1. Executive Summary (2-3 sentences)
+2. MVP Feature List (10 concrete features with brief descriptions)
+3. Pricing Strategy (3 tiers with names and prices)
+4. Launch Plan (phased: Month 1, Month 2-3, Month 4-6)
+5. Key Risks and Mitigations
+
+Format as polished markdown. Be specific — use real numbers, real timelines."""
+
+    try:
+        llm = _get_llm()
+        response = llm.invoke(prompt)
+        report_body = str(response.content)
+    except Exception as e:
+        report_body = f"Writer LLM failed: {str(e)}\n\nAnalysis:\n{analysis}"
 
     final_report = f"""# Strategic Execution Plan: {objective}
 
-## 1. Executive Summary
-This report provides market research, competitor analysis, and a go-to-market strategy for: **{objective}**.
+{report_body}
 
-## 2. Market & Competitor Analysis
-{analysis}
+---
 
-## 3. Go-To-Market Recommendations
-1. **MVP Scope:** Address the primary friction points found in competitor research.
-2. **Pricing Model:** Transparent, flat-tier pricing to compete against high-cost incumbents.
-3. **Distribution Channels:** Targeted niche communities, direct outreach, and search-optimized content.
-
-## 4. Cited Sources
-{sources_text if sources_text else "Primary internet search index."}
+## Cited Sources
+{sources_text if sources_text else "Live internet search index."}
 """
 
     log_entry = {
         "agent": "Writer Agent",
-        "message": "Compiled final strategic report with citations.",
+        "message": "Compiled full strategic launch plan with MVP list and go-to-market roadmap.",
         "timestamp": _get_timestamp()
     }
 
@@ -95,5 +131,3 @@ This report provides market research, competitor analysis, and a go-to-market st
         "status": "completed",
         "logs": state.get("logs", []) + [log_entry]
     }
-
-
