@@ -13,9 +13,79 @@ import {
   Search,
   Sparkles,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import WorkflowGraph from "@/components/WorkflowGraph";
+
+function renderMarkdown(content: string) {
+  const lines = content.split("\n");
+  const elements: React.ReactNode[] = [];
+  let listItems: React.ReactNode[] = [];
+  let key = 0;
+
+  const flushList = () => {
+    if (listItems.length > 0) {
+      elements.push(<ul key={`ul-${key++}`}>{listItems}</ul>);
+      listItems = [];
+    }
+  };
+
+  const formatInline = (text: string): React.ReactNode => {
+    const parts = text.split(/(\*\*.*?\*\*|`.*?`|\[.*?\]\(.*?\))/g);
+    return parts.map((part, i) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return <strong key={i}>{part.slice(2, -2)}</strong>;
+      }
+      if (part.startsWith("`") && part.endsWith("`")) {
+        return <code key={i}>{part.slice(1, -1)}</code>;
+      }
+      const linkMatch = part.match(/^\[(.*?)\]\((.*?)\)$/);
+      if (linkMatch) {
+        return (
+          <a key={i} href={linkMatch[2]} target="_blank" rel="noopener noreferrer">
+            {linkMatch[1]}
+          </a>
+        );
+      }
+      return part;
+    });
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    if (!line) {
+      flushList();
+      continue;
+    }
+
+    if (line.startsWith("---") || line.startsWith("***")) {
+      flushList();
+      elements.push(<hr key={`hr-${key++}`} />);
+    } else if (line.startsWith("# ")) {
+      flushList();
+      elements.push(<h1 key={`h1-${key++}`}>{formatInline(line.slice(2))}</h1>);
+    } else if (line.startsWith("## ")) {
+      flushList();
+      elements.push(<h2 key={`h2-${key++}`}>{formatInline(line.slice(3))}</h2>);
+    } else if (line.startsWith("### ")) {
+      flushList();
+      elements.push(<h3 key={`h3-${key++}`}>{formatInline(line.slice(4))}</h3>);
+    } else if (line.startsWith("- ") || line.startsWith("* ")) {
+      listItems.push(<li key={`li-${key++}`}>{formatInline(line.slice(2))}</li>);
+    } else if (/^\d+\.\s/.test(line)) {
+      const text = line.replace(/^\d+\.\s/, "");
+      listItems.push(<li key={`li-${key++}`}>{formatInline(text)}</li>);
+    } else if (line.startsWith("> ")) {
+      flushList();
+      elements.push(<blockquote key={`bq-${key++}`}>{formatInline(line.slice(2))}</blockquote>);
+    } else {
+      flushList();
+      elements.push(<p key={`p-${key++}`}>{formatInline(line)}</p>);
+    }
+  }
+
+  flushList();
+  return elements;
+}
 
 interface ActivityItem {
   agent: string;
@@ -395,9 +465,7 @@ export default function Page() {
                 </div>
               </div>
               <article className="strategy-markdown">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {finalReport}
-                </ReactMarkdown>
+                {renderMarkdown(finalReport)}
               </article>
               <p className="report-action-message" role="status">{reportActionMessage}</p>
             </section>
