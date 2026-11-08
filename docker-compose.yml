@@ -1,12 +1,13 @@
 services:
   frontend:
-    build: ./frontend
+    build: ./frontend-professional
     container_name: orchestra_frontend
     ports:
       - "3000:3000"
     volumes:
-      - ./frontend:/app
+      - ./frontend-professional:/app
       - /app/node_modules
+      - /app/.next
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws/missions
@@ -25,6 +26,7 @@ services:
       - DATABASE_URL=postgresql://user:password@postgres:5432/command_center
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:1b}
     depends_on:
       - redis
       - postgres

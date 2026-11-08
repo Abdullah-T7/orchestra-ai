@@ -85,29 +85,32 @@ async def websocket_mission_stream(websocket: WebSocket):
         })
         await asyncio.sleep(2.0)
 
-        # Stream LangGraph execution with deliberate 2.2-second pauses
+        # Stream LangGraph execution with state preservation across nodes
+        accumulated_state = dict(state)
         for step_output in mission_graph.stream(state):
             node_name = list(step_output.keys())[0]
-            updated_state = step_output[node_name]
-            new_logs = updated_state.get("logs", [])
+            node_data = step_output[node_name]
+            accumulated_state.update(node_data)
+            new_logs = accumulated_state.get("logs", [])
             latest_log = new_logs[-1] if new_logs else None
 
             await websocket.send_json({
                 "type": "NODE_UPDATE",
                 "active_agent": node_name,
                 "latest_log": latest_log,
-                "status": updated_state.get("status", "running"),
-                "research_count": len(updated_state.get("research_data", [])),
-                "has_analysis": bool(updated_state.get("analysis")),
-                "final_report": updated_state.get("final_report")
+                "status": accumulated_state.get("status", "running"),
+                "research_count": len(accumulated_state.get("research_data", [])),
+                "has_analysis": bool(accumulated_state.get("analysis")),
+                "final_report": accumulated_state.get("final_report")
             })
 
             # Pacing pause so network transitions and timeline bars can be clearly observed
-            await asyncio.sleep(2.2)
+            await asyncio.sleep(1.8)
 
         await websocket.send_json({
             "type": "MISSION_COMPLETE",
-            "status": "completed"
+            "status": "completed",
+            "final_report": accumulated_state.get("final_report")
         })
     except WebSocketDisconnect:
         pass

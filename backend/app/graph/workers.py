@@ -11,17 +11,18 @@ def _get_timestamp() -> str:
 def _get_llm():
     from langchain_ollama import ChatOllama
     base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    return ChatOllama(model="llama3.2", base_url=base_url, timeout=120)
+    model = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
+    return ChatOllama(model=model, base_url=base_url, timeout=180)
 
 
 def researcher_node(state: MissionState) -> dict:
     objective = state["objective"]
-    query = f"{objective} market competitors pricing customer complaints"
-    results = search_web(query, max_results=6)
+    query = f"{objective} competitors pricing complaints"
+    results = search_web(query, max_results=5)
 
     log_entry = {
         "agent": "Researcher Agent",
-        "message": f"Searched web for '{query}' — retrieved {len(results)} live sources.",
+        "message": f"Fetched {len(results)} live sources for: '{query}'",
         "timestamp": _get_timestamp()
     }
 
@@ -36,36 +37,36 @@ def analyst_node(state: MissionState) -> dict:
     research = state.get("research_data", [])
     objective = state["objective"]
 
-    snippets_text = "\n\n".join([
-        f"Source: {r.get('title', 'Unknown')}\nURL: {r.get('url', '')}\nSummary: {r.get('snippet', '')}"
+    # Build a compact snippet list — shorter prompt = faster Ollama response
+    snippets = "\n".join([
+        f"- {r.get('title', '')}: {r.get('snippet', '')[:200]}"
         for r in research
     ])
 
-    prompt = f"""You are a senior market analyst. A research team collected the following live web sources for this objective:
-
-OBJECTIVE: {objective}
-
-RESEARCH SOURCES:
-{snippets_text}
-
-Based on these sources, write a detailed market analysis that includes:
-1. Competitor overview (names, pricing tiers if visible, key features)
-2. Common customer complaints and unmet needs
-3. SWOT Analysis (Strengths, Weaknesses, Opportunities, Threats)
-4. Key market gaps and strategic opportunities
-
-Format your response as clean markdown with proper headers."""
+    prompt = (
+        f"Objective: {objective}\n\n"
+        f"Web research snippets:\n{snippets}\n\n"
+        f"Write a concise market analysis with:\n"
+        f"1. Top 3-5 competitors and their pricing\n"
+        f"2. Main customer complaints\n"
+        f"3. SWOT (bullet points, 2-3 items each)\n"
+        f"Use markdown headers. Be brief and direct."
+    )
 
     try:
         llm = _get_llm()
         response = llm.invoke(prompt)
         analysis_text = str(response.content)
     except Exception as e:
-        analysis_text = f"Ollama analysis failed: {str(e)}\n\nRaw sources collected:\n{snippets_text}"
+        snippets_fallback = "\n".join([
+            f"- {r.get('title', '')}: {r.get('snippet', '')}"
+            for r in research
+        ])
+        analysis_text = f"## Raw Research Data\n\n{snippets_fallback}\n\n*LLM unavailable: {e}*"
 
     log_entry = {
         "agent": "Analyst Agent",
-        "message": "Completed SWOT analysis and competitor landscape via Ollama.",
+        "message": "Completed SWOT analysis and competitor landscape.",
         "timestamp": _get_timestamp()
     }
 
@@ -81,47 +82,39 @@ def writer_node(state: MissionState) -> dict:
     analysis = state.get("analysis", "No analysis provided.")
     sources = state.get("research_data", [])
 
-    sources_text = "\n".join([
-        f"- [{s.get('title', 'Source')}]({s.get('url', '#')})"
-        for s in sources if s.get("url")
-    ])
-
-    prompt = f"""You are a senior startup strategist and technical writer. Using the market analysis below, write a complete go-to-market launch document for this objective:
-
-OBJECTIVE: {objective}
-
-MARKET ANALYSIS:
-{analysis}
-
-Write a professional strategic document that includes:
-1. Executive Summary (2-3 sentences)
-2. MVP Feature List (10 concrete features with brief descriptions)
-3. Pricing Strategy (3 tiers with names and prices)
-4. Launch Plan (phased: Month 1, Month 2-3, Month 4-6)
-5. Key Risks and Mitigations
-
-Format as polished markdown. Be specific — use real numbers, real timelines."""
+    prompt = (
+        f"Objective: {objective}\n\n"
+        f"Market analysis summary:\n{analysis[:1500]}\n\n"
+        f"Write a concise launch plan with:\n"
+        f"1. Executive Summary (2 sentences)\n"
+        f"2. MVP Feature List (5-7 features)\n"
+        f"3. Pricing (3 tiers with names and prices)\n"
+        f"4. Launch Phases (Month 1, Month 2-3, Month 4-6)\n"
+        f"Use markdown. Be specific with numbers."
+    )
 
     try:
         llm = _get_llm()
         response = llm.invoke(prompt)
         report_body = str(response.content)
     except Exception as e:
-        report_body = f"Writer LLM failed: {str(e)}\n\nAnalysis:\n{analysis}"
+        report_body = f"*Writer LLM unavailable: {e}*\n\n## Analysis\n{analysis}"
 
-    final_report = f"""# Strategic Execution Plan: {objective}
+    sources_text = "\n".join([
+        f"- [{s.get('title', 'Source')}]({s.get('url', '#')})"
+        for s in sources if s.get("url")
+    ])
 
-{report_body}
-
----
-
-## Cited Sources
-{sources_text if sources_text else "Live internet search index."}
-"""
+    final_report = (
+        f"# Strategic Plan: {objective}\n\n"
+        f"{report_body}\n\n"
+        f"---\n\n"
+        f"## Sources\n{sources_text or 'Live web search.'}"
+    )
 
     log_entry = {
         "agent": "Writer Agent",
-        "message": "Compiled full strategic launch plan with MVP list and go-to-market roadmap.",
+        "message": "Compiled strategic launch plan with MVP list and go-to-market roadmap.",
         "timestamp": _get_timestamp()
     }
 
