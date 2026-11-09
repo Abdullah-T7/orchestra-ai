@@ -11,6 +11,8 @@ from sqlalchemy import desc
 from app.database import engine, Base, get_db, SessionLocal
 from app.models import Mission, AgentLogModel
 from app.graph.workflow import mission_graph
+from app.graph.workers import refine_strategy
+from datetime import datetime
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -121,6 +123,80 @@ async def websocket_mission_stream(websocket: WebSocket):
 
     try:
         data = await websocket.receive_json()
+        action = data.get("action", "run")
+
+        if action == "refine":
+            target_id = data.get("mission_id") or mission_id
+            instruction = data.get("instruction", "")
+            current_report = data.get("current_report", "")
+            objective = data.get("objective", "Strategic Mission")
+
+            db_mission = db.query(Mission).filter(Mission.id == target_id).first()
+            if not db_mission:
+                db_mission = Mission(
+                    id=target_id,
+                    objective=objective,
+                    status="running",
+                    research_count=0,
+                    final_report=current_report
+                )
+                db.add(db_mission)
+                db.commit()
+
+            timestamp = datetime.now().strftime("%H:%M:%S")
+
+            await websocket.send_json({
+                "type": "NODE_UPDATE",
+                "mission_id": target_id,
+                "active_agent": "writer",
+                "latest_log": {
+                    "agent": "Writer Agent",
+                    "message": f"Refining brief based on feedback: '{instruction}'",
+                    "timestamp": timestamp
+                },
+                "status": "running",
+                "research_count": db_mission.research_count or 0,
+                "has_analysis": True,
+                "final_report": current_report
+            })
+
+            # LLM refinement
+            updated_report = refine_strategy(objective, current_report, instruction)
+
+            db_mission.final_report = updated_report
+            db_mission.status = "completed"
+            db_log = AgentLogModel(
+                mission_id=target_id,
+                agent="Writer Agent",
+                message=f"Refined strategy: {instruction}",
+                timestamp=datetime.now().strftime("%H:%M:%S")
+            )
+            db.add(db_log)
+            db.commit()
+
+            await websocket.send_json({
+                "type": "NODE_UPDATE",
+                "mission_id": target_id,
+                "active_agent": "writer",
+                "latest_log": {
+                    "agent": "Writer Agent",
+                    "message": "Strategy brief updated and saved.",
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                },
+                "status": "completed",
+                "research_count": db_mission.research_count or 0,
+                "has_analysis": True,
+                "final_report": updated_report
+            })
+
+            await websocket.send_json({
+                "type": "MISSION_COMPLETE",
+                "mission_id": target_id,
+                "status": "completed",
+                "final_report": updated_report
+            })
+            return
+
         objective = data.get("objective", "Find profitable SaaS business opportunities")
 
         # Create running mission in PostgreSQL

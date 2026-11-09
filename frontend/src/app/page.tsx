@@ -52,12 +52,62 @@ function renderMarkdown(content: string) {
     });
   };
 
+  const isTableDivider = (str: string) => str.replace(/[|\-:\s]/g, "").length === 0;
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
     if (!line) {
       flushList();
       continue;
+    }
+
+    if (line.startsWith("|") && line.endsWith("|")) {
+      flushList();
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
+        tableLines.push(lines[i].trim());
+        i++;
+      }
+      i--;
+
+      if (tableLines.length >= 2) {
+        const headerCols = tableLines[0]
+          .split("|")
+          .slice(1, -1)
+          .map((c) => c.trim());
+        const dataRows = tableLines.slice(1).filter((l) => !isTableDivider(l));
+
+        elements.push(
+          <div key={`table-${key++}`} className="overflow-x-auto my-3">
+            <table>
+              <thead>
+                <tr>
+                  {headerCols.map((col, idx) => (
+                    <th key={idx}>{formatInline(col)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {dataRows.map((row, rIdx) => {
+                  const cols = row
+                    .split("|")
+                    .slice(1, -1)
+                    .map((c) => c.trim());
+                  return (
+                    <tr key={rIdx}>
+                      {cols.map((col, cIdx) => (
+                        <td key={cIdx}>{formatInline(col)}</td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+        continue;
+      }
     }
 
     if (line.startsWith("---") || line.startsWith("***")) {
@@ -373,12 +423,95 @@ export default function Page() {
     };
   };
 
+  const refineMission = (instruction: string) => {
+    if (status === "RUNNING" || !instruction.trim()) return;
+
+    socketRef.current?.close();
+    setStatus("RUNNING");
+    setActiveAgent("writer");
+    setCurrentTask("Refining strategy brief");
+    setReportActionMessage("");
+
+    addActivity("You", instruction, "system");
+
+    const socketUrl =
+      process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws/missions";
+    const socket = new WebSocket(socketUrl);
+    socketRef.current = socket;
+
+    socket.onopen = () => {
+      socket.send(
+        JSON.stringify({
+          action: "refine",
+          mission_id: selectedMissionId || undefined,
+          instruction,
+          current_report: finalReport,
+          objective: missionObjective || instruction,
+        })
+      );
+    };
+
+    socket.onmessage = (event) => {
+      let data: {
+        type?: string;
+        active_agent?: string;
+        final_report?: string | null;
+        latest_log?: { message?: string };
+        message?: string;
+      };
+
+      try {
+        data = JSON.parse(event.data);
+      } catch {
+        setStatus("ERROR");
+        return;
+      }
+
+      if (data.type === "NODE_UPDATE") {
+        setActiveAgent(data.active_agent || "writer");
+        if (data.final_report) setFinalReport(data.final_report);
+        if (data.latest_log?.message) {
+          addActivity("Writer", data.latest_log.message, "writer");
+        }
+      }
+
+      if (data.type === "MISSION_COMPLETE") {
+        setStatus("COMPLETED");
+        setActiveAgent(null);
+        setCurrentTask("Strategy brief updated");
+        if (data.final_report) setFinalReport(data.final_report);
+        setReportActionMessage("Brief updated with your feedback");
+        addActivity("System", "Strategy brief updated successfully.", "system");
+        fetchMissions();
+        socket.close();
+      }
+
+      if (data.type === "ERROR") {
+        setStatus("ERROR");
+        setActiveAgent(null);
+        setCurrentTask("Refinement error");
+        addActivity("System", data.message || "Error refining brief.", "system");
+        socket.close();
+      }
+    };
+
+    socket.onerror = () => {
+      setStatus("ERROR");
+      setActiveAgent(null);
+      setCurrentTask("Connection failed during refinement");
+    };
+  };
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const objective = chatInput.trim();
-    if (!objective) return;
+    const text = chatInput.trim();
+    if (!text) return;
     setChatInput("");
-    executeMission(objective);
+    if (status === "COMPLETED" && finalReport) {
+      refineMission(text);
+    } else {
+      executeMission(text);
+    }
   };
 
   const handleInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -420,19 +553,19 @@ export default function Page() {
   };
 
   const stages = [
-    { key: "researcher", label: "Research", detail: "Market & competitors" },
-    { key: "analyst", label: "Analysis", detail: "Opportunity & risks" },
-    { key: "writer", label: "Strategy", detail: "Positioning & launch" },
+    { key: "researcher", label: "Market Intelligence", detail: "Scrapes competitor pricing & customer reviews" },
+    { key: "analyst", label: "Opportunity Synthesis", detail: "Builds SWOT matrix & competitor table" },
+    { key: "writer", label: "Strategic Architecture", detail: "Synthesizes GTM roadmap, MVP scope & tiers" },
   ] as const;
 
   const statusLabel =
     status === "RUNNING"
-      ? "Running"
+      ? "Agents Active"
       : status === "COMPLETED"
-        ? "Complete"
+        ? "Strategy Ready"
         : status === "ERROR"
-          ? "Needs attention"
-          : "Ready";
+          ? "Attention Needed"
+          : "Standby";
 
   return (
     <main className="workspace-shell">
@@ -440,8 +573,8 @@ export default function Page() {
         <a className="brand-lockup" href="#" aria-label="Orchestra home">
           <span className="brand-mark"><Network size={16} strokeWidth={1.7} /></span>
           <span>
-            <strong>Orchestra</strong>
-            <small>Strategy workspace</small>
+            <strong>Orchestra AI</strong>
+            <small>Autonomous Strategy Workforce</small>
           </span>
         </a>
         <div className="header-context">
@@ -535,8 +668,8 @@ export default function Page() {
         <section className="canvas-column" aria-label="Mission graph and progress">
           <div className="mission-heading">
             <div className="mission-heading-copy">
-              <span className="eyebrow">LIVE SIMULATION</span>
-              <h1>{missionObjective || "Explore a strategic opportunity"}</h1>
+              <span className="eyebrow">AUTONOMOUS AGENT WORKFORCE</span>
+              <h1>{missionObjective || "Explore a market opportunity & synthesize a launch plan"}</h1>
               <p>{currentTask}</p>
             </div>
             <div className="simulation-stats">
@@ -547,7 +680,7 @@ export default function Page() {
               <span className="stat-divider" />
               <div>
                 <strong>{Object.values(progress).filter((value) => value === 100).length}<span>/3</span></strong>
-                <span>Stages</span>
+                <span>Agents</span>
               </div>
             </div>
           </div>
@@ -633,8 +766,8 @@ export default function Page() {
             <div className="chat-title">
               <span className="chat-icon"><MessageSquareText size={16} /></span>
               <span>
-                <strong>Mission room</strong>
-                <small>Plan, run, and review</small>
+                <strong>Mission Room</strong>
+                <small>Agent telemetry & live refinement</small>
               </span>
             </div>
             <span className={`chat-live ${status === "RUNNING" ? "is-running" : ""}`}>
@@ -646,15 +779,24 @@ export default function Page() {
             {activities.length === 0 ? (
               <div className="chat-empty">
                 <span className="empty-mark"><Sparkles size={18} /></span>
-                <h2>Start with a question</h2>
-                <p>Describe a market, product, or business decision. Your agents will research it and build a strategy.</p>
+                <h2>Deploy your agent workforce</h2>
+                <p>Enter any market, product, or competitor research objective to generate a complete executive launch roadmap.</p>
                 <button
                   type="button"
                   className="suggestion"
-                  onClick={() => setChatInput("Find an underserved opportunity in restaurant inventory software and create a launch strategy.")}
+                  onClick={() => setChatInput("Research 10 competitors for a restaurant SaaS, check their pricing, find customer complaints, write a SWOT analysis, create an MVP feature list, and write a launch plan.")}
                 >
                   <Search size={14} />
-                  <span>Explore a market opportunity</span>
+                  <span>Restaurant SaaS competitor research & SWOT</span>
+                </button>
+                <button
+                  type="button"
+                  className="suggestion"
+                  style={{ marginTop: "6px" }}
+                  onClick={() => setChatInput("Analyze the AI customer support software market, compare top 5 players, identify pricing models and customer complaints, and create an MVP launch roadmap.")}
+                >
+                  <Search size={14} />
+                  <span>AI Customer Support market analysis</span>
                 </button>
               </div>
             ) : (
@@ -685,7 +827,16 @@ export default function Page() {
           </div>
 
           <form className="composer" onSubmit={handleSubmit}>
-            <label htmlFor="mission-input">MISSION OBJECTIVE</label>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+              <label htmlFor="mission-input">
+                {status === "COMPLETED" && finalReport ? "REFINE STRATEGY BRIEF" : "MISSION OBJECTIVE"}
+              </label>
+              {status === "COMPLETED" && finalReport && (
+                <span style={{ fontSize: "9px", color: "#15803d", background: "#f0fdf4", padding: "1px 6px", borderRadius: "4px", border: "1px solid #bbf7d0", fontWeight: 600 }}>
+                  Refinement Active
+                </span>
+              )}
+            </div>
             <div className="composer-box">
               <textarea
                 id="mission-input"
@@ -694,13 +845,17 @@ export default function Page() {
                 onKeyDown={handleInputKeyDown}
                 disabled={status === "RUNNING"}
                 rows={3}
-                placeholder="What opportunity should we explore?"
+                placeholder={
+                  status === "COMPLETED" && finalReport
+                    ? "Ask a follow-up or refine this brief... (e.g. 'Give more details on launch plan', 'Add an enterprise tier')"
+                    : "What opportunity should we explore?"
+                }
               />
               <div className="composer-footer">
                 <span>Enter to send · Shift + Enter for a new line</span>
                 <button
                   type="submit"
-                  aria-label="Launch mission"
+                  aria-label={status === "COMPLETED" && finalReport ? "Refine brief" : "Launch mission"}
                   disabled={status === "RUNNING" || !chatInput.trim()}
                 >
                   {status === "RUNNING" ? <LoaderCircle size={16} className="spin" /> : <ArrowUp size={17} />}

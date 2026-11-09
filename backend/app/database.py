@@ -4,7 +4,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://user:password@localhost:5432/command_center"
+    "postgresql://orchestra_user:orchestra_secret_2024@localhost:5432/orchestra_db"
 )
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)

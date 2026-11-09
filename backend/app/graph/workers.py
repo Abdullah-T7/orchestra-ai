@@ -18,11 +18,12 @@ def _get_llm():
 def researcher_node(state: MissionState) -> dict:
     objective = state["objective"]
     query = f"{objective} competitors pricing complaints"
-    results = search_web(query, max_results=5)
+    results, from_cache = search_web(query, max_results=5)
 
+    source_note = "cache" if from_cache else "live web search"
     log_entry = {
         "agent": "Researcher Agent",
-        "message": f"Fetched {len(results)} live sources for: '{query}'",
+        "message": f"Fetched {len(results)} sources via {source_note} for: '{query}'",
         "timestamp": _get_timestamp()
     }
 
@@ -37,7 +38,6 @@ def analyst_node(state: MissionState) -> dict:
     research = state.get("research_data", [])
     objective = state["objective"]
 
-    # Build a compact snippet list — shorter prompt = faster Ollama response
     snippets = "\n".join([
         f"- {r.get('title', '')}: {r.get('snippet', '')[:200]}"
         for r in research
@@ -46,11 +46,14 @@ def analyst_node(state: MissionState) -> dict:
     prompt = (
         f"Objective: {objective}\n\n"
         f"Web research snippets:\n{snippets}\n\n"
-        f"Write a concise market analysis with:\n"
-        f"1. Top 3-5 competitors and their pricing\n"
-        f"2. Main customer complaints\n"
-        f"3. SWOT (bullet points, 2-3 items each)\n"
-        f"Use markdown headers. Be brief and direct."
+        f"You are a market analyst. Produce a concise analysis with:\n"
+        f"1. A Structured Competitor Comparison Matrix as a Markdown Table with exact columns:\n"
+        f"| Competitor | Est. Pricing | Key Strength | Main Customer Complaint |\n"
+        f"|---|---|---|---|\n"
+        f"Include at least 3-4 real competitors derived from the snippets.\n\n"
+        f"2. SWOT Analysis (2-3 bullet points each for Strengths, Weaknesses, Opportunities, Threats)\n"
+        f"3. Identified Market Gap (what competitors are missing)\n"
+        f"Keep it realistic, direct, and concise."
     )
 
     try:
@@ -66,7 +69,7 @@ def analyst_node(state: MissionState) -> dict:
 
     log_entry = {
         "agent": "Analyst Agent",
-        "message": "Completed SWOT analysis and competitor landscape.",
+        "message": "Synthesized competitor comparison matrix and SWOT analysis.",
         "timestamp": _get_timestamp()
     }
 
@@ -84,13 +87,14 @@ def writer_node(state: MissionState) -> dict:
 
     prompt = (
         f"Objective: {objective}\n\n"
-        f"Market analysis summary:\n{analysis[:1500]}\n\n"
-        f"Write a concise launch plan with:\n"
+        f"Market analysis & competitor data:\n{analysis}\n\n"
+        f"Write a complete strategic execution plan that includes:\n"
         f"1. Executive Summary (2 sentences)\n"
-        f"2. MVP Feature List (5-7 features)\n"
-        f"3. Pricing (3 tiers with names and prices)\n"
-        f"4. Launch Phases (Month 1, Month 2-3, Month 4-6)\n"
-        f"Use markdown. Be specific with numbers."
+        f"2. Competitor Landscape & Comparison Matrix (include the markdown table from analysis)\n"
+        f"3. MVP Feature Scope (5-7 prioritized features with descriptions)\n"
+        f"4. Pricing Strategy (3 tiers: Name, Monthly Price, Target Audience)\n"
+        f"5. Go-To-Market Roadmap (Month 1, Month 2-3, Month 4-6 milestones)\n"
+        f"Use clean markdown headers. Keep the competitor table intact and format as clean markdown."
     )
 
     try:
@@ -114,7 +118,7 @@ def writer_node(state: MissionState) -> dict:
 
     log_entry = {
         "agent": "Writer Agent",
-        "message": "Compiled strategic launch plan with MVP list and go-to-market roadmap.",
+        "message": "Compiled strategic launch plan with competitor matrix and roadmap.",
         "timestamp": _get_timestamp()
     }
 
@@ -124,3 +128,21 @@ def writer_node(state: MissionState) -> dict:
         "status": "completed",
         "logs": state.get("logs", []) + [log_entry]
     }
+
+
+def refine_strategy(objective: str, current_report: str, instruction: str) -> str:
+    prompt = (
+        f"You are the Writer agent refining a strategic execution brief.\n\n"
+        f"ORIGINAL OBJECTIVE: {objective}\n\n"
+        f"CURRENT STRATEGY BRIEF:\n{current_report}\n\n"
+        f"USER REFINEMENT INSTRUCTION: \"{instruction}\"\n\n"
+        f"Please update and improve the strategy brief based on the user's instruction.\n"
+        f"Maintain the professional markdown structure, existing sections, and comparison tables, but expand, adjust, or deepen the requested sections.\n"
+        f"Return the complete updated brief in markdown."
+    )
+    try:
+        llm = _get_llm()
+        response = llm.invoke(prompt)
+        return str(response.content)
+    except Exception as e:
+        return f"{current_report}\n\n---\n\n### Refinement Note\nCould not apply feedback automatically: {e}"
