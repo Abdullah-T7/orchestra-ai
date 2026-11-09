@@ -1,11 +1,11 @@
 services:
   frontend:
-    build: ./frontend-professional
+    build: ./frontend
     container_name: orchestra_frontend
     ports:
       - "3000:3000"
     volumes:
-      - ./frontend-professional:/app
+      - ./frontend:/app
       - /app/node_modules
       - /app/.next
     environment:

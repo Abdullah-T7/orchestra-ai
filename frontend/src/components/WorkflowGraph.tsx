@@ -1,274 +1,268 @@
 "use client";
 
-import React, { useState } from "react";
-import { Database, Search, Settings, Grid, BarChart3, Edit3, Share2, Maximize2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Minus, Plus, RotateCcw } from "lucide-react";
 
 interface WorkflowGraphProps {
   activeAgent: string | null;
-  isRunning: boolean;
-  researchCount: number;
+  running: boolean;
+  completed: boolean;
+  signalCount: number;
+  runId: number;
 }
+
+interface SignalNode {
+  x: number;
+  y: number;
+  label: string;
+  group: "research" | "analysis" | "strategy";
+}
+
+const signalPositions: SignalNode[] = [
+  { x: 74, y: 104, label: "Market", group: "research" },
+  { x: 173, y: 73, label: "Demand", group: "research" },
+  { x: 82, y: 196, label: "Pricing", group: "research" },
+  { x: 228, y: 126, label: "Players", group: "research" },
+  { x: 132, y: 280, label: "Reviews", group: "research" },
+  { x: 46, y: 325, label: "Trends", group: "research" },
+  { x: 196, y: 353, label: "Segments", group: "research" },
+  { x: 76, y: 442, label: "Pain points", group: "research" },
+  { x: 225, y: 475, label: "Channels", group: "research" },
+  { x: 115, y: 535, label: "Adoption", group: "research" },
+  { x: 273, y: 278, label: "Sources", group: "research" },
+  { x: 34, y: 505, label: "Competition", group: "research" },
+  { x: 382, y: 77, label: "Market gap", group: "analysis" },
+  { x: 465, y: 96, label: "Differentiation", group: "analysis" },
+  { x: 418, y: 296, label: "Customer fit", group: "analysis" },
+  { x: 511, y: 269, label: "Economics", group: "analysis" },
+  { x: 375, y: 358, label: "Risks", group: "analysis" },
+  { x: 523, y: 374, label: "Retention", group: "analysis" },
+  { x: 720, y: 94, label: "Positioning", group: "strategy" },
+  { x: 768, y: 168, label: "MVP scope", group: "strategy" },
+  { x: 746, y: 255, label: "Pricing model", group: "strategy" },
+  { x: 781, y: 443, label: "Launch", group: "strategy" },
+  { x: 706, y: 508, label: "Growth loop", group: "strategy" },
+  { x: 585, y: 520, label: "Milestones", group: "strategy" },
+  { x: 314, y: 515, label: "Integrations", group: "research" },
+  { x: 606, y: 78, label: "Opportunity", group: "analysis" },
+  { x: 424, y: 469, label: "Execution", group: "strategy" },
+  { x: 753, y: 328, label: "Acquisition", group: "strategy" },
+  { x: 278, y: 75, label: "Workflows", group: "research" },
+  { x: 603, y: 450, label: "North star", group: "strategy" },
+  { x: 354, y: 143, label: "Customer pain", group: "analysis" },
+  { x: 702, y: 195, label: "Value prop", group: "strategy" },
+];
 
 export default function WorkflowGraph({
   activeAgent,
-  isRunning,
-  researchCount,
+  running,
+  completed,
+  signalCount,
+  runId,
 }: WorkflowGraphProps) {
-  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [visibleSignals, setVisibleSignals] = useState(0);
+  const [zoom, setZoom] = useState(1);
 
-  // Generate dynamic search satellite nodes as search increases
-  const dynamicSourceNodes = Array.from({ length: Math.min(researchCount, 8) }).map((_, i) => {
-    const angle = (Math.PI * 0.7) + (i * 0.35);
-    const radius = 65;
-    return {
-      id: `dyn-src-${i}`,
-      label: `Src #${i + 1}`,
-      x: 230 - Math.cos(angle) * radius,
-      y: 155 - Math.sin(angle) * radius,
-    };
-  });
+  useEffect(() => {
+    setVisibleSignals(0);
+  }, [runId]);
+
+  useEffect(() => {
+    if (!running && !completed) return;
+
+    const timer = window.setInterval(() => {
+      setVisibleSignals((current) => {
+        const target = signalPositions.length;
+        if (current >= target) {
+          window.clearInterval(timer);
+          return current;
+        }
+        return current + 1;
+      });
+    }, completed ? 170 : 480);
+
+    return () => window.clearInterval(timer);
+  }, [running, completed, runId]);
+
+  const activeStage = activeAgent === "researcher"
+    ? "Mapping the market"
+    : activeAgent === "analyst"
+      ? "Connecting insights"
+      : activeAgent === "writer"
+        ? "Forming strategy"
+        : running
+          ? "Orchestrating agents"
+          : completed
+            ? "Network assembled"
+            : "Awaiting a mission";
+  const researchNodes = signalPositions
+    .slice(0, visibleSignals)
+    .filter((node) => node.group === "research");
+  const analysisNodes = signalPositions
+    .slice(0, visibleSignals)
+    .filter((node) => node.group === "analysis");
+  const strategyNodes = signalPositions
+    .slice(0, visibleSignals)
+    .filter((node) => node.group === "strategy");
+  const viewWidth = 820 / zoom;
+  const viewHeight = 600 / zoom;
+  const viewBox = `${(820 - viewWidth) / 2} ${(600 - viewHeight) / 2} ${viewWidth} ${viewHeight}`;
 
   return (
-    <div className="relative w-full h-[370px] bg-[#0c1220] border border-[#1b263b] rounded-2xl overflow-hidden shadow-lg flex flex-col">
-      {/* Card Header */}
-      <div className="flex justify-between items-center px-5 py-3 border-b border-[#1b263b]/70 bg-[#0a0f1d]/50">
-        <div className="flex items-center gap-2">
-          <Share2 className="w-4 h-4 text-slate-400" />
-          <span className="text-xs font-bold text-white tracking-wide">Multi-Agent Workflow Graph</span>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] text-emerald-400 font-medium">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Live</span>
+    <section className="overflow-hidden rounded-[24px] border border-zinc-200 bg-white">
+      <header className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
+        <div>
+          <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
+            <span className={`h-1.5 w-1.5 rounded-full ${running ? "animate-pulse bg-zinc-900" : "bg-zinc-300"}`} />
+            {running ? "Simulation running" : "Simulation canvas"}
           </div>
-          <button className="text-slate-500 hover:text-slate-300 transition-colors">
-            <Maximize2 className="w-3.5 h-3.5" />
-          </button>
+          <h2 className="mt-1 text-[15px] font-semibold tracking-tight text-zinc-900">Agent network</h2>
         </div>
-      </div>
+        <div className="text-right">
+          <p className="text-[11px] font-medium text-zinc-800">{activeStage}</p>
+          <p className="mt-0.5 text-[10px] text-zinc-400">
+            {visibleSignals} nodes · {signalCount} sources
+          </p>
+        </div>
+      </header>
 
-      {/* SVG Canvas Area */}
-      <div className="relative flex-1">
-        {/* Subtle Background Grid Pattern */}
-        <svg className="absolute inset-0 w-full h-full opacity-20 pointer-events-none">
+      <div className="relative h-[min(62vh,660px)] min-h-[430px] bg-[#fdfdfc]">
+        <svg
+          viewBox={viewBox}
+          className="h-full w-full"
+          role="img"
+          aria-label={`Live agent network visualization with ${visibleSignals} nodes mapped`}
+        >
           <defs>
-            <pattern id="wf-grid" width="32" height="32" patternUnits="userSpaceOnUse">
-              <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#334155" strokeWidth="0.7" />
+            <pattern id="canvas-grid" width="28" height="28" patternUnits="userSpaceOnUse">
+              <path d="M 28 0 L 0 0 0 28" fill="none" stroke="#e9e9e7" strokeWidth="0.8" />
             </pattern>
           </defs>
-          <rect width="100%" height="100%" fill="url(#wf-grid)" />
-        </svg>
+          <rect width="820" height="600" fill="url(#canvas-grid)" />
 
-        <svg viewBox="0 0 760 310" className="w-full h-full">
-          <defs>
-            {/* Marker arrow definition */}
-            <marker
-              id="arrowhead"
-              markerWidth="7"
-              markerHeight="5"
-              refX="6"
-              refY="2.5"
-              orient="auto"
+          <g className={running ? "graph-links graph-links-active" : "graph-links"}>
+            {researchNodes.map((signal, index) => (
+              <path
+                key={`research-link-${index}`}
+                d={`M ${signal.x} ${signal.y} Q ${(signal.x + 330) / 2} ${(signal.y + 205) / 2 - 16} 330 205`}
+                fill="none"
+                stroke="#27272a"
+                strokeOpacity="0.32"
+                strokeWidth="1.1"
+                className="link-draw"
+                style={{ animationDelay: `${Math.min(index * 35, 350)}ms` }}
+              />
+            ))}
+            {analysisNodes.map((signal, index) => (
+              <path
+                key={`analysis-link-${index}`}
+                d={`M 555 150 Q ${(signal.x + 555) / 2} ${(signal.y + 150) / 2} ${signal.x} ${signal.y}`}
+                fill="none"
+                stroke="#52525b"
+                strokeOpacity="0.38"
+                strokeWidth="1.1"
+                className="link-draw"
+                style={{ animationDelay: `${Math.min(index * 40, 360)}ms` }}
+              />
+            ))}
+            {strategyNodes.map((signal, index) => (
+              <path
+                key={`strategy-link-${index}`}
+                d={`M 665 365 Q ${(signal.x + 665) / 2} ${(signal.y + 365) / 2} ${signal.x} ${signal.y}`}
+                fill="none"
+                stroke="#52525b"
+                strokeOpacity="0.38"
+                strokeWidth="1.1"
+                className="link-draw"
+                style={{ animationDelay: `${Math.min(index * 40, 360)}ms` }}
+              />
+            ))}
+            <path className="core-link" d="M 365 195 C 420 150 465 145 520 150" fill="none" stroke="#18181b" strokeWidth="1.5" />
+            <path className="core-link" d="M 580 178 C 630 220 654 270 665 327" fill="none" stroke="#18181b" strokeWidth="1.5" />
+            <path className="core-link" d="M 360 228 C 430 280 520 330 630 360" fill="none" stroke="#a1a1aa" strokeWidth="1.2" strokeDasharray="4 5" />
+            <path className="core-link" d="M 555 190 C 560 280 605 340 642 360" fill="none" stroke="#a1a1aa" strokeWidth="1.2" strokeDasharray="4 5" />
+          </g>
+
+          {signalPositions.slice(0, visibleSignals).map((signal, index) => (
+            <g
+              key={`${runId}-${index}`}
+              className={`signal-node signal-appear ${running ? "signal-node-moving" : ""}`}
+              style={{ animationDelay: `${Math.min(index * 35, 420)}ms` }}
             >
-              <polygon points="0 0, 7 2.5, 0 5" fill="#475569" />
-            </marker>
-            <marker
-              id="arrowhead-active"
-              markerWidth="7"
-              markerHeight="5"
-              refX="6"
-              refY="2.5"
-              orient="auto"
-            >
-              <polygon points="0 0, 7 2.5, 0 5" fill="#10b981" />
-            </marker>
-          </defs>
-
-          {/* Core Curved Connecting Bezier Edges */}
-          {/* Supervisor (380, 155) -> Source Cache (380, 50) */}
-          <path
-            d="M 380 120 L 380 75"
-            stroke={isRunning ? "#10b981" : "#334155"}
-            strokeWidth={1.5}
-            fill="none"
-            markerEnd={isRunning ? "url(#arrowhead-active)" : "url(#arrowhead)"}
-          />
-
-          {/* Supervisor -> Search Engine (230, 155) */}
-          <path
-            d="M 345 155 Q 295 155 265 155"
-            stroke={activeAgent === "researcher" ? "#10b981" : "#334155"}
-            strokeWidth={activeAgent === "researcher" ? 2 : 1.5}
-            fill="none"
-            markerEnd={activeAgent === "researcher" ? "url(#arrowhead-active)" : "url(#arrowhead)"}
-          />
-
-          {/* Supervisor -> Strategy Planner (230, 245) */}
-          <path
-            d="M 350 175 Q 290 215 260 235"
-            stroke="#334155"
-            strokeWidth={1.5}
-            fill="none"
-            markerEnd="url(#arrowhead)"
-          />
-
-          {/* Supervisor -> SWOT Matrix (380, 255) */}
-          <path
-            d="M 380 190 L 380 235"
-            stroke={activeAgent === "analyst" ? "#10b981" : "#334155"}
-            strokeWidth={1.5}
-            fill="none"
-            markerEnd={activeAgent === "analyst" ? "url(#arrowhead-active)" : "url(#arrowhead)"}
-          />
-
-          {/* Supervisor -> Analyst (530, 155) */}
-          <path
-            d="M 415 155 Q 465 155 495 155"
-            stroke={activeAgent === "analyst" ? "#10b981" : "#334155"}
-            strokeWidth={activeAgent === "analyst" ? 2 : 1.5}
-            fill="none"
-            markerEnd={activeAgent === "analyst" ? "url(#arrowhead-active)" : "url(#arrowhead)"}
-          />
-
-          {/* Supervisor -> Writer (530, 245) */}
-          <path
-            d="M 410 175 Q 470 215 500 235"
-            stroke={activeAgent === "writer" ? "#10b981" : "#334155"}
-            strokeWidth={activeAgent === "writer" ? 2 : 1.5}
-            fill="none"
-            markerEnd={activeAgent === "writer" ? "url(#arrowhead-active)" : "url(#arrowhead)"}
-          />
-
-          {/* DYNAMIC BRANCHING LINES: Increase as search increases */}
-          {dynamicSourceNodes.map((src, i) => (
-            <g key={src.id}>
-              {/* Line from Search Engine to Discovered Source */}
-              <line
-                x1={230}
-                y1={155}
-                x2={src.x}
-                y2={src.y}
-                stroke="#10b981"
-                strokeWidth={1.2}
-                strokeOpacity={0.8}
-                strokeDasharray="2,3"
-              />
-              {/* Line connecting Source into Source Cache */}
-              <line
-                x1={src.x}
-                y1={src.y}
-                x2={380}
-                y2={50}
-                stroke="#06b6d4"
-                strokeWidth={0.8}
-                strokeOpacity={0.4}
-              />
-              {/* Source Circle Node */}
-              <circle
-                cx={src.x}
-                cy={src.y}
-                r={4}
-                fill="#10b981"
-                className="animate-pulse"
-              />
-              <text
-                x={src.x}
-                y={src.y - 7}
-                textAnchor="middle"
-                fontSize={8}
-                fill="#94a3b8"
-                className="select-none"
-              >
-                {src.label}
-              </text>
+              <g className={running ? "signal-node-moving" : ""}>
+                <circle cx={signal.x} cy={signal.y} r="5" fill="white" stroke="#18181b" strokeWidth="1.4" />
+                <circle cx={signal.x} cy={signal.y} r="1.5" fill="#18181b" />
+                <text
+                  x={signal.x}
+                  y={signal.y - 10}
+                  textAnchor="middle"
+                  className="fill-zinc-500"
+                  fontSize="9"
+                >
+                  {signal.label}
+                </text>
+              </g>
             </g>
           ))}
 
-          {/* --- SURROUNDING WORKFLOW NODES --- */}
-
-          {/* 1. Source Cache (Top) */}
-          <g className="cursor-pointer">
-            <rect x={348} y={32} width={64} height={36} rx={18} fill="#131b2e" stroke="#1e293b" strokeWidth={1.5} />
-            <circle cx={366} cy={50} r={10} fill="#1e293b" />
-            <foreignObject x={358} y={42} width={16} height={16}>
-              <Database className="w-4 h-4 text-slate-300" />
-            </foreignObject>
-            <text x={380} y={82} textAnchor="middle" fontSize={10} fontWeight={600} fill="#e2e8f0">Source Cache</text>
+          <g>
+            <circle cx="330" cy="205" r="44" fill={activeAgent === "researcher" ? "#f4f4f5" : "white"} stroke="#18181b" strokeWidth={activeAgent === "researcher" ? "2" : "1.4"} />
+            <circle className={running && activeAgent === "researcher" ? "agent-pulse" : ""} cx="330" cy="205" r="50" fill="none" stroke="#18181b" strokeOpacity={activeAgent === "researcher" ? "0.12" : "0"} strokeWidth="1" />
+            <text x="330" y="202" textAnchor="middle" className="fill-zinc-900" fontSize="12" fontWeight="600">Research</text>
+            <text x="330" y="220" textAnchor="middle" className="fill-zinc-500" fontSize="9">market signals</text>
           </g>
 
-          {/* 2. Search Engine (Left) */}
-          <g className="cursor-pointer">
-            <circle cx={230} cy={155} r={22} fill="#131b2e" stroke={activeAgent === "researcher" ? "#10b981" : "#1e293b"} strokeWidth={1.5} />
-            <foreignObject x={221} y={146} width={18} height={18}>
-              <Search className="w-4.5 h-4.5 text-slate-300" />
-            </foreignObject>
-            <text x={230} y={192} textAnchor="middle" fontSize={10} fontWeight={600} fill="#e2e8f0">Search Engine</text>
+          <g>
+            <circle cx="555" cy="150" r="36" fill={activeAgent === "analyst" ? "#f4f4f5" : "white"} stroke="#18181b" strokeWidth={activeAgent === "analyst" ? "2" : "1.4"} />
+            <text x="555" y="147" textAnchor="middle" className="fill-zinc-900" fontSize="11" fontWeight="600">Analysis</text>
+            <text x="555" y="164" textAnchor="middle" className="fill-zinc-500" fontSize="9">opportunity</text>
           </g>
 
-          {/* 3. Strategy Planner (Bottom Left) */}
-          <g className="cursor-pointer">
-            <circle cx={230} cy={245} r={22} fill="#131b2e" stroke="#1e293b" strokeWidth={1.5} />
-            <foreignObject x={221} y={236} width={18} height={18}>
-              <Settings className="w-4.5 h-4.5 text-slate-300" />
-            </foreignObject>
-            <text x={230} y={282} textAnchor="middle" fontSize={10} fontWeight={600} fill="#e2e8f0">Strategy Planner</text>
+          <g>
+            <circle cx="665" cy="365" r="42" fill={activeAgent === "writer" ? "#f4f4f5" : "white"} stroke="#18181b" strokeWidth={activeAgent === "writer" ? "2" : "1.4"} />
+            <text x="665" y="362" textAnchor="middle" className="fill-zinc-900" fontSize="11" fontWeight="600">Strategy</text>
+            <text x="665" y="379" textAnchor="middle" className="fill-zinc-500" fontSize="9">launch plan</text>
           </g>
 
-          {/* 4. SWOT Matrix (Bottom) */}
-          <g className="cursor-pointer">
-            <rect x={348} y={235} width={64} height={36} rx={18} fill="#131b2e" stroke="#1e293b" strokeWidth={1.5} />
-            <circle cx={366} cy={253} r={10} fill="#1e293b" />
-            <foreignObject x={358} y={245} width={16} height={16}>
-              <Grid className="w-4 h-4 text-slate-300" />
-            </foreignObject>
-            <text x={380} y={286} textAnchor="middle" fontSize={10} fontWeight={600} fill="#e2e8f0">SWOT Matrix</text>
+          <g>
+            <rect x="390" y="405" width="130" height="48" rx="14" fill="white" stroke="#d4d4d8" strokeWidth="1.2" />
+            <text x="455" y="425" textAnchor="middle" className="fill-zinc-800" fontSize="10" fontWeight="600">Mission objective</text>
+            <text x="455" y="440" textAnchor="middle" className="fill-zinc-400" fontSize="9">decision context</text>
           </g>
 
-          {/* 5. Analyst (Right) */}
-          <g className="cursor-pointer">
-            <circle cx={530} cy={155} r={22} fill="#131b2e" stroke={activeAgent === "analyst" ? "#10b981" : "#1e293b"} strokeWidth={1.5} />
-            <foreignObject x={521} y={146} width={18} height={18}>
-              <BarChart3 className="w-4.5 h-4.5 text-slate-300" />
-            </foreignObject>
-            <text x={530} y={192} textAnchor="middle" fontSize={10} fontWeight={600} fill="#e2e8f0">Analyst</text>
-          </g>
-
-          {/* 6. Writer (Bottom Right) */}
-          <g className="cursor-pointer">
-            <circle cx={530} cy={245} r={22} fill="#131b2e" stroke={activeAgent === "writer" ? "#10b981" : "#1e293b"} strokeWidth={1.5} />
-            <foreignObject x={521} y={236} width={18} height={18}>
-              <Edit3 className="w-4.5 h-4.5 text-slate-300" />
-            </foreignObject>
-            <text x={530} y={282} textAnchor="middle" fontSize={10} fontWeight={600} fill="#e2e8f0">Writer</text>
-          </g>
-
-          {/* --- CENTRAL SUPERVISOR CORE (The Glowing Hero) --- */}
-          <g className="cursor-pointer">
-            {/* Outer Emerald Glow Halo */}
-            <circle
-              cx={380}
-              cy={155}
-              r={38}
-              fill="none"
-              stroke="#10b981"
-              strokeWidth={2}
-              strokeOpacity={0.8}
-              className={isRunning ? "animate-pulse" : ""}
-            />
-            {/* Inner Translucent Glow Ring */}
-            <circle cx={380} cy={155} r={33} fill="#0d2e26" stroke="#10b981" strokeWidth={1.5} />
-            <circle cx={380} cy={155} r={26} fill="#061f19" />
-            <foreignObject x={368} y={143} width={24} height={24}>
-              <Share2 className="w-6 h-6 text-emerald-400" />
-            </foreignObject>
-            <text x={380} y={206} textAnchor="middle" fontSize={10.5} fontWeight={700} fill="#ffffff">
-              Supervisor Core
-            </text>
-          </g>
+          <text x="32" y="568" className="fill-zinc-400" fontSize="9" letterSpacing="1.5">LIVE KNOWLEDGE GRAPH</text>
         </svg>
+        <div className="graph-controls" aria-label="Graph zoom controls">
+          <button
+            type="button"
+            aria-label="Zoom out"
+            title="Zoom out"
+            disabled={zoom <= 0.7}
+            onClick={() => setZoom((current) => Math.max(0.7, Math.round((current - 0.15) * 100) / 100))}
+          >
+            <Minus size={14} />
+          </button>
+          <span aria-live="polite">{Math.round(zoom * 100)}%</span>
+          <button
+            type="button"
+            aria-label="Zoom in"
+            title="Zoom in"
+            disabled={zoom >= 1.6}
+            onClick={() => setZoom((current) => Math.min(1.6, Math.round((current + 0.15) * 100) / 100))}
+          >
+            <Plus size={14} />
+          </button>
+          <span className="graph-control-divider" />
+          <button
+            type="button"
+            aria-label="Reset graph zoom"
+            title="Reset zoom"
+            onClick={() => setZoom(1)}
+          >
+            <RotateCcw size={13} />
+          </button>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
-

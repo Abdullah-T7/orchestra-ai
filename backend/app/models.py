@@ -29,3 +29,4 @@ class AgentLogModel(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     mission = relationship("Mission", back_populates="logs")
+

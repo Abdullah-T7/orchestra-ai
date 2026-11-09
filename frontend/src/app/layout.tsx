@@ -1,22 +1,15 @@
-import type { Metadata } from "next";
 import "./globals.css";
+import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Orchestra AI | Neural Command Center",
-  description: "Autonomous multi-agent digital workforce orchestration",
+  title: "Orchestra AI",
+  description: "Professional AI strategy workspace",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen antialiased bg-[#050811] text-slate-100">
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
-
